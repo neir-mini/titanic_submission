@@ -1,0 +1,7 @@
+{
+  "age_median": 28.0,
+  "fare_median": 14.4542,
+  "fare_mean": 32.204207968574636,
+  "fare_std": 49.6934285971809,
+  "embarked_mode": "S"
+}
