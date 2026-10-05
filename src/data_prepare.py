@@ -24,6 +24,7 @@ N_FEATURES = 12
 LABEL_COL = "Survived"
 EPOCHS = 300
 BATCH_SIZE = 32
+PATIENCE = 30          # 验证集连续 30 轮没进步就早停
 LR = 1e-3
 WEIGHT_DECAY = 1e-4
 DROPOUT = 0.2
@@ -72,12 +73,25 @@ def clean(df, pm):
   return out
 
 # 4.主流程
-# 4.1算预处理参数，用于补全原始数据
+# 4.1切分原始数据（先用原始行号切分，保证 SEED 固定后每个样本只属于一个集合）
 def main():
     np.random.seed(SEED)
-    df = pd.read_csv(RAW_DATA_CSV)
+    raw = pd.read_csv(RAW_DATA_CSV)
     print(f"[prepare] 读入 {RAW_DATA_CSV}")
 
+    n = len(raw)
+    idx = np.random.permutation(n)
+    n_test = int(n * TEST_RATIO)
+    n_val = int(n * VAL_RATIO)
+
+    raw_splits = {
+        "train": raw.iloc[idx[n_test + n_val:]].reset_index(drop=True),
+        "val": raw.iloc[idx[n_test:n_test + n_val]].reset_index(drop=True),
+        "test": raw.iloc[idx[:n_test]].reset_index(drop=True),
+    }
+
+    # 4.2预处理参数只从训练集计算，避免验证/测试集信息泄漏
+    df = raw_splits["train"]
     pm = {
           "age_median": float(df["Age"].median()),
           "fare_median": float(df["Fare"].median()),
@@ -85,31 +99,20 @@ def main():
           "fare_std": float(df["Fare"].std()),
           "embarked_mode": str(df["Embarked"].mode()[0])
     }
-    
-    # 4.2清洗
-    out = clean(df, pm)
-    print("数据清理中")
-    assert not out.isnull().any().any(), "还有缺失值！"
-    print("数据清理完毕！\n启动！！！")
-    # 4.3切分成三份
-    n = len(out)
-    idx = np.random.permutation(n)
-    n_test = int(n * TEST_RATIO)
-    n_val = int(n * VAL_RATIO)
-    test_idx = idx[:n_test]
-    val_idx = idx[n_test:n_test + n_val]
-    train_idx = idx[n_test + n_val:]
+    print(f"[prepare] 预处理参数（仅用训练集 {len(df)} 行计算）：{pm}")
 
-    splits = {
-        "train": out.iloc[train_idx].reset_index(drop=True),
-        "val": out.iloc[val_idx].reset_index(drop=True),
-        "test": out.iloc[test_idx].reset_index(drop=True),
-    }
+    # 4.3三份数据用同一套参数清洗
+    splits = {}
+    for name, part in raw_splits.items():
+        out = clean(part, pm)
+        assert not out.isnull().any().any(), f"{name} 还有缺失值！"
+        splits[name] = out
+
     # 4.4保存
     for name, part in splits.items():
         p = os.path.join(DATA, f"{name}.csv")
         part.to_csv(p, index=False)
-        print(f"[prepare] {name:<5} 已保存到 {p}")
+        print(f"[prepare] {name:<5} {part.shape} 已保存到 {p}")
     with open(PARAM_JSON, "w", encoding="utf-8") as f:
       json.dump(pm, f, ensure_ascii=False, indent=2)
       print(f"[prepare] 预处理参数已保存到 {PARAM_JSON}")

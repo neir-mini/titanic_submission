@@ -9,7 +9,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from data_prepare import (SEED, EPOCHS, BATCH_SIZE, LR, WEIGHT_DECAY,
+from data_prepare import (SEED, EPOCHS, BATCH_SIZE, LR, WEIGHT_DECAY, PATIENCE,
                           DROPOUT, HIDDEN, N_FEATURES, LABEL_COL,
                           DATA, DOCS, OUTPUT, MODEL)
 from model import TitanicNet                          
@@ -56,6 +56,7 @@ def train():
     hist = {"train_loss": [], "val_loss": [], "train_acc": [], "val_acc": []}
     
     best_acc, best_state = -1.0, None
+    best_epoch, no_improve = 0, 0
     for epoch in range(1, EPOCHS + 1):
         model.train()
         total_loss = 0.0
@@ -77,9 +78,17 @@ def train():
 
         if val_acc > best_acc:
             best_acc = val_acc
+            best_epoch = epoch
+            no_improve = 0
             best_state = {k: v.detach().clone() for k, v in model.state_dict().items()}
-    
+        else:
+            no_improve += 1
+            if no_improve >= PATIENCE:
+                print(f"[train] 早停：第 {epoch} 轮，验证集已连续 {PATIENCE} 轮没有进步")
+                break
+
     model.load_state_dict(best_state)
+    print(f"[train] 最佳轮次 {best_epoch}，验证集准确率 {best_acc*100:.2f}%")
 
     return model, hist, (Xtr, ytr), (Xva, yva), (Xte, yte), total_params
 
@@ -87,7 +96,7 @@ def train():
 def plot(hist):
     plt.rcParams["font.sans-serif"] = ["SimHei", "Microsoft YaHei", "DejaVu Sans"]
     plt.rcParams["axes.unicode_minus"] = False
-    ep = range(1, EPOCHS + 1)
+    ep = range(1, len(hist["train_loss"]) + 1)
 
     plt.figure(figsize=(7, 4))
     plt.plot(ep, hist["train_loss"], label="Train Loss")
@@ -128,11 +137,12 @@ def main():
     save_model(model)
 
     print(f"参数量        {total_params}")
+    print(f"实际训练轮数  {len(hist['train_loss'])} / 上限 {EPOCHS}（早停耐心值 {PATIENCE}）")
     print(f"训练集准确率  {tr_acc*100:.2f}%")
     print(f"验证集准确率  {va_acc*100:.2f}%")
     print(f"测试集准确率  {te_acc*100:.2f}%")
     print(f"瞎猜基线      {base*100:.2f}%")
-    print(f"泛化差距      {(tr_acc-te_acc)*100:.2f}%")
+    print(f"泛化差距      {(tr_acc-te_acc)*100:.2f}%   （训练集 - 测试集）")
 
 if __name__ == "__main__":
     main()
